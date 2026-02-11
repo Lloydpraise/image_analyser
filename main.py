@@ -36,11 +36,16 @@ def smart_center_crop(img):
     img = img.convert("RGB")
     width, height = img.size
     crop_percent = 0.70
-    left = (width - width * crop_percent) / 2
-    top = (height - height * crop_percent) / 2
-    right = (width + width * crop_percent) / 2
-    bottom = (height + height * crop_percent) / 2
-    return img.crop((left, top, right, bottom)).resize((224, 224))
+    crop_width = width * crop_percent
+    crop_height = height * crop_percent
+    left = (width - crop_width) / 2
+    top = (height - crop_height) / 2
+    right = left + crop_width
+    bottom = top + crop_height
+    cropped = img.crop((int(left), int(top), int(right), int(bottom)))
+    # Ensure output is always exactly 224x224 to avoid tensor dimension issues
+    resized = cropped.resize((224, 224), Image.Resampling.LANCZOS)
+    return resized
 
 @app.post("/vectorize")
 async def vectorize_image(request: ImageRequest):
@@ -64,8 +69,9 @@ async def vectorize_image(request: ImageRequest):
 
         # Use torch.no_grad() to minimize RAM usage during inference
         with torch.no_grad():
-            embeddings = model.encode([processed_img])
-            embedding = embeddings[0].tolist()
+            # Encode with explicit padding enabled to prevent batching issues
+            embeddings = model.encode([processed_img], convert_to_tensor=False)
+            embedding = embeddings[0].tolist() if isinstance(embeddings[0], (list, tuple)) else embeddings[0].cpu().numpy().tolist()
         
         return {"embedding": embedding}
         
