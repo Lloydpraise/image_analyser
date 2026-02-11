@@ -11,6 +11,10 @@
         .match-glow { border-color: #a855f7; box-shadow: 0 0 20px rgba(168, 85, 247, 0.2); transform: scale(1.02); }
         .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Hide scrollbar for cleaner look */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1a1d23; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
     </style>
 </head>
 <body class="p-8 max-w-6xl mx-auto">
@@ -70,7 +74,7 @@
         
         // POINT TO YOUR NEW PROXY FUNCTION
         const PROXY_URL = `${SUPABASE_URL}/functions/v1/vector-proxy`;
-const businessId = "kisasacraft66"; // This should match the business_id used in your SQL function for filtering
+        const businessId = "kisasacraft66"; 
 
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -95,6 +99,8 @@ const businessId = "kisasacraft66"; // This should match the business_id used in
         function applySmartCrop(imgElement) {
             const canvas = document.getElementById('cropPreview');
             const ctx = canvas.getContext('2d');
+            
+            // Match the Python 70% Center Crop Logic
             const cropPercent = 0.70; 
             const sourceW = imgElement.naturalWidth;
             const sourceH = imgElement.naturalHeight;
@@ -103,7 +109,7 @@ const businessId = "kisasacraft66"; // This should match the business_id used in
             const startX = (sourceW - cropW) / 2;
             const startY = (sourceH - cropH) / 2;
 
-            canvas.width = 224;
+            canvas.width = 224; // CLIP Standard Input Size
             canvas.height = 224;
             ctx.drawImage(imgElement, startX, startY, cropW, cropH, 0, 0, 224, 224);
         }
@@ -117,11 +123,11 @@ const businessId = "kisasacraft66"; // This should match the business_id used in
             if (!document.getElementById('preview').src) return alert("Please select an image first!");
 
             try {
+                // A. GET EMBEDDING FROM PROXY
                 status.innerText = "⏳ Proxy: Calling Railway via Deno...";
                 
-                const base64Data = canvas.toDataURL('image/jpeg', 0.9);
+                const base64Data = canvas.toDataURL('image/jpeg', 0.9); // Get Base64 from Canvas
 
-                // We call the PROXY instead of direct Railway
                 const vecRes = await fetch(PROXY_URL, {
                     method: 'POST',
                     headers: { 
@@ -139,21 +145,22 @@ const businessId = "kisasacraft66"; // This should match the business_id used in
                 const { embedding } = await vecRes.json();
                 console.log("Vector Received from Proxy:", embedding);
 
-                status.innerText = "🔎 DB: Matching via match_images_v1...";
-               // ALIGNED to match the new match_image_products_v1 function
-const { data: products, error } = await supabaseClient.rpc('match_image_products_v1', {
-    query_embedding: embedding,       // Must match SQL parameter name
-    match_threshold: 0.5,             // Matches SQL parameter name
-    match_count: 5,                   // Matches SQL parameter name
-    filter_business_id: businessId  // Added this to match the new SQL security filter
-});
+                // B. QUERY DATABASE (RPC)
+                status.innerText = "🔎 DB: Matching via match_image_products_v1...";
+                
+                const { data: products, error } = await supabaseClient.rpc('match_image_products_v1', {
+                    query_embedding: embedding,       
+                    match_threshold: 0.5,             
+                    match_count: 10,                   
+                    filter_business_id: businessId    
+                });
 
-if (error) {
-    console.error("RPC Error Details:", error);
-    throw new Error(`Database Error: ${error.message}`);
-}
+                if (error) {
+                    console.error("RPC Error Details:", error);
+                    throw new Error(`Database Error: ${error.message}`);
+                }
 
-                // Render Results
+                // C. RENDER RESULTS
                 grid.innerHTML = '';
                 document.getElementById('matchCount').innerText = products ? products.length : 0;
 
@@ -162,19 +169,20 @@ if (error) {
                         <div class="text-gray-500 text-center py-20 border-2 border-dashed border-[#2b2f3a] rounded-2xl">
                             No products matched this image.<br>Try adjusting the 0.5 threshold.
                         </div>`;
+                    status.innerText = "✅ Analysis Complete (No Matches).";
                     return;
                 }
 
                 products.forEach((item, i) => {
-                    const sim = (1 - item.cosine_distance) * 100;
+                    // Note: RPC returns 'similarity' (0 to 1), not 'cosine_distance'
+                    const sim = (item.similarity * 100).toFixed(1); 
                     const isTop = i === 0;
                     
-                    // Safe handling for the images array
                     const displayImage = (Array.isArray(item.images) && item.images.length > 0) 
                         ? item.images[0] 
                         : 'https://via.placeholder.com/150';
                     
-                    // Handle product link generation 
+                    // Construct Link
                     const productLink = item.handle 
                         ? `https://kisasacraft.co.ke/products/${item.handle}` 
                         : `https://kisasacraft.co.ke/products/${item.id}`;
@@ -187,8 +195,8 @@ if (error) {
                             </div>
                             <div class="flex-1 min-w-0">
                                 <div class="font-bold text-sm truncate text-white">${item.title}</div>
-                                <div class="text-xs text-green-400 mt-1 font-mono">${sim.toFixed(1)}% Match</div>
-                                <div class="text-[10px] text-gray-500 mt-1">Dist: ${item.cosine_distance.toFixed(4)}</div>
+                                <div class="text-xs text-green-400 mt-1 font-mono">${sim}% Match</div>
+                                <div class="text-[10px] text-gray-500 mt-1 truncate">${item.id}</div>
                             </div>
                             <a href="${productLink}" target="_blank" class="bg-purple-600/20 hover:bg-purple-600 text-purple-400 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
                                 VIEW

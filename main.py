@@ -8,10 +8,10 @@ from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import uvicorn
 import os
+import torch
 
 app = FastAPI()
 
-# --- 1. CORS CONFIG ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,55 +21,57 @@ app.add_middleware(
 )
 
 # Load Model
-print("Loading CLIP Model...")
-model = SentenceTransformer('clip-ViT-B-32')
+print("Loading CLIP Model (CPU Mode)...")
+model = SentenceTransformer('clip-ViT-B-32', device='cpu')
 
 class ImageRequest(BaseModel):
     image_url: str = None
     image_base64: str = None
 
 def smart_center_crop(img):
+    # CRITICAL: Always convert to RGB to drop alpha/transparency channels
+    img = img.convert("RGB")
     width, height = img.size
     crop_percent = 0.70
     left = (width - width * crop_percent) / 2
     top = (height - height * crop_percent) / 2
     right = (width + width * crop_percent) / 2
     bottom = (height + height * crop_percent) / 2
-    return img.crop((left, top, right, bottom))
+    # Standard resize to CLIP expected dimensions
+    return img.crop((left, top, right, bottom)).resize((224, 224))
 
 @app.post("/vectorize")
 async def vectorize_image(request: ImageRequest):
     try:
         img = None
-        # Handle Base64
         if request.image_base64:
             encoded = request.image_base64
             if "," in encoded:
                 encoded = encoded.split(",")[1]
             img_data = base64.b64decode(encoded)
-            img = Image.open(BytesIO(img_data)).convert("RGB")
+            img = Image.open(BytesIO(img_data))
         
-        # Handle URL
         elif request.image_url:
             response = requests.get(request.image_url, timeout=10)
-            img = Image.open(BytesIO(response.content)).convert("RGB")
+            img = Image.open(BytesIO(response.content))
         
         if not img:
-            raise HTTPException(status_code=400, detail="No image source provided")
+            raise HTTPException(status_code=400, detail="No image provided")
 
+        # Process the image
         processed_img = smart_center_crop(img)
 
-        # --- 🔧 THE TENSOR FIX ---
-        # model.encode expects a LIST of images. 
-        # By putting [processed_img] in brackets, we create a batch of 1.
-        # We then take [0] to get the result for that single image.
-        embeddings = model.encode([processed_img])
-        embedding = embeddings[0].tolist()
+        # 🔧 THE BATCHING FIX:
+        # We pass a LIST containing the image. SentenceTransformers will return 
+        # a list of embeddings. We take the first one [0].
+        with torch.no_grad():
+            embeddings = model.encode([processed_img], convert_to_tensor=True)
+            embedding = embeddings[0].tolist()
         
         return {"embedding": embedding}
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
