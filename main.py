@@ -12,17 +12,16 @@ import os
 app = FastAPI()
 
 # --- 1. STRICT CORS CONFIG ---
-# This must be defined before any routes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins (essential for local testing)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows POST, OPTIONS, etc.
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Load Model
-print("Loading Model...")
+print("Loading CLIP Model (this may take a minute)...")
 model = SentenceTransformer('clip-ViT-B-32')
 
 class ImageRequest(BaseModel):
@@ -42,14 +41,16 @@ def smart_center_crop(img):
 async def vectorize_image(request: ImageRequest):
     try:
         img = None
+        
+        # Priority 1: Direct Base64 data from our Webhook
         if request.image_base64:
-            # Check if it has the data:image/jpeg;base64, prefix
             encoded = request.image_base64
             if "," in encoded:
                 encoded = encoded.split(",")[1]
             img_data = base64.b64decode(encoded)
             img = Image.open(BytesIO(img_data)).convert("RGB")
         
+        # Priority 2: Image URL (fallback)
         elif request.image_url:
             response = requests.get(request.image_url, timeout=10)
             img = Image.open(BytesIO(response.content)).convert("RGB")
@@ -57,16 +58,21 @@ async def vectorize_image(request: ImageRequest):
         if not img:
             raise HTTPException(status_code=400, detail="No image source provided")
 
+        # Process the image
         cropped_img = smart_center_crop(img)
-        embedding = model.encode(cropped_img).tolist()
+        
+        # 🔧 THE TENSOR FIX:
+        # We wrap [cropped_img] in a list so the model treats it as a 'batch'.
+        # Then we take the first result [0] to get back our single vector.
+        embedding = model.encode([cropped_img])[0].tolist()
         
         return {"embedding": embedding}
         
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error during vectorization: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# For local testing vs Railway
+# Entry point for Railway
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)

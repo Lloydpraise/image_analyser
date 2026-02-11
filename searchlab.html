@@ -2,71 +2,86 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>VVStudios - AI Search Lab</title>
+    <title>VVStudios - AI Search Lab (Proxy Mode)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         body { background: #0f1115; color: white; font-family: 'Inter', sans-serif; }
-        .result-card { background: #1a1d23; border: 1px solid #2b2f3a; }
-        .match-glow { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.2); }
+        .result-card { background: #1a1d23; border: 1px solid #2b2f3a; transition: all 0.3s; }
+        .match-glow { border-color: #a855f7; box-shadow: 0 0 20px rgba(168, 85, 247, 0.2); transform: scale(1.02); }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body class="p-8 max-w-6xl mx-auto">
     <div class="mb-10 text-center">
-        <h1 class="text-3xl font-bold text-purple-400">AI Search Lab v1.0</h1>
-        <p class="text-gray-400">Testing Railway Vector Engine & Supabase Matching</p>
+        <h1 class="text-3xl font-bold text-purple-400">AI Search Lab v1.1</h1>
+        <p class="text-gray-400">Status: <span class="text-green-500 font-mono">Bypassing CORS via Edge Proxy</span></p>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
         <div class="space-y-6">
             <div class="p-6 rounded-2xl bg-[#1a1d23] border border-[#2b2f3a]">
-                <h3 class="text-sm font-bold uppercase text-gray-500 mb-4">Step 1: Upload Image</h3>
+                <h3 class="text-sm font-bold uppercase text-gray-500 mb-4">Step 1: Upload Product Screenshot</h3>
                 <input type="file" id="imageInput" accept="image/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer">
                 
                 <div class="mt-6 grid grid-cols-2 gap-4">
-                    <div>
-                        <p class="text-[10px] text-gray-500 mb-2 uppercase">Original Preview</p>
-                        <img id="preview" class="hidden rounded-lg border border-[#2b2f3a] w-full aspect-square object-cover">
+                    <div class="text-center">
+                        <p class="text-[10px] text-gray-500 mb-2 uppercase">Original</p>
+                        <div class="aspect-square bg-black/40 rounded-lg flex items-center justify-center overflow-hidden border border-[#2b2f3a]">
+                            <img id="preview" class="hidden w-full h-full object-contain">
+                            <span id="origPlaceholder" class="text-gray-700 text-xs">No Image</span>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-[10px] text-purple-400 mb-2 uppercase font-bold">AI Focus (Center 70%)</p>
-                        <canvas id="cropPreview" class="w-full aspect-square rounded-lg border-2 border-purple-500/50 bg-black"></canvas>
+                    <div class="text-center">
+                        <p class="text-[10px] text-purple-400 mb-2 uppercase font-bold">AI Focus (70% Crop)</p>
+                        <div class="aspect-square bg-black/40 rounded-lg flex items-center justify-center overflow-hidden border-2 border-purple-500/30">
+                            <canvas id="cropPreview" class="w-full h-full"></canvas>
+                        </div>
                     </div>
                 </div>
 
-                <button id="searchBtn" class="w-full mt-6 py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold transition-all shadow-lg shadow-purple-900/40">
-                    Analyze & Search Catalog
+                <button id="searchBtn" class="w-full mt-6 py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold transition-all shadow-lg shadow-purple-900/40 active:scale-95">
+                    Run Vector Search
                 </button>
             </div>
 
-            <div id="status" class="p-4 rounded-xl bg-purple-900/10 border border-purple-500/20 text-center text-sm text-purple-400 font-mono">
-                System Ready. Waiting for input...
+            <div id="status" class="p-4 rounded-xl bg-purple-900/10 border border-purple-500/20 text-center text-sm text-purple-300 font-mono italic">
+                Ready for testing...
             </div>
         </div>
 
         <div class="space-y-4">
             <h2 class="text-xl font-semibold flex items-center gap-3">
-                Live Matches <span id="matchCount" class="text-xs bg-[#2b2f3a] px-2 py-1 rounded text-purple-400">0 FOUND</span>
+                Live Matches <span id="matchCount" class="text-xs bg-purple-600/20 px-3 py-1 rounded-full text-purple-400 border border-purple-500/30">0</span>
             </h2>
-            <div id="resultsGrid" class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+            <div id="resultsGrid" class="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                <div class="text-gray-600 text-center py-20 border-2 border-dashed border-[#2b2f3a] rounded-2xl">
+                    Results will appear after analysis
                 </div>
+            </div>
         </div>
     </div>
 
     <script type="module">
+        // --- CONFIGURATION ---
         const SUPABASE_URL = 'https://xgtnbxdxbbywvzrttixf.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhndG5ieGR4YmJ5d3Z6cnR0aXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0Nzg5NTAsImV4cCI6MjA3MjA1NDk1MH0.YGk0vFyIJEiSpu5phzV04Mh4lrHBlfYLFtPP_afFtMQ';
-        const RAILWAY_URL = 'https://imageanalyser-production.up.railway.app/vectorize'; // YOUR LIVE LINK
+        
+        // POINT TO YOUR NEW PROXY FUNCTION
+        const PROXY_URL = `${SUPABASE_URL}/functions/v1/vector-proxy`;
+const businessId = "kisasacraft66"; // This should match the business_id used in your SQL function for filtering
 
         const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // 1. Handle File Selection
+        // --- 1. HANDLE IMAGE SELECTION & CROP ---
         document.getElementById('imageInput').onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                     const img = document.getElementById('preview');
+                    document.getElementById('origPlaceholder').classList.add('hidden');
                     img.onload = () => {
                         img.classList.remove('hidden');
                         applySmartCrop(img);
@@ -77,7 +92,6 @@
             }
         };
 
-        // 2. The Smart Crop Logic (Matching our Python logic)
         function applySmartCrop(imgElement) {
             const canvas = document.getElementById('cropPreview');
             const ctx = canvas.getContext('2d');
@@ -94,69 +108,100 @@
             ctx.drawImage(imgElement, startX, startY, cropW, cropH, 0, 0, 224, 224);
         }
 
-        // 3. The Search Loop
+        // --- 2. SEARCH VIA PROXY ---
         document.getElementById('searchBtn').onclick = async () => {
             const status = document.getElementById('status');
             const grid = document.getElementById('resultsGrid');
             const canvas = document.getElementById('cropPreview');
             
+            if (!document.getElementById('preview').src) return alert("Please select an image first!");
+
             try {
-                status.innerText = "Step 1: Uploading to Railway AI...";
+                status.innerText = "⏳ Proxy: Calling Railway via Deno...";
                 
-                // Convert canvas to Blob for Railway
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-                
-                // We need a URL to send to Railway. Since we don't want to fill up your DB, 
-                // we'll just send the base64 or a temporary upload if needed.
-                // FOR TESTING: Let's send the base64 string to Railway (we may need to update main.py for this)
-                const base64 = canvas.toDataURL('image/jpeg');
-                
-                // NOTE: Railway current main.py expects a URL. For this Lab, let's use a Public Sample 
-                // OR update the Python to accept base64. 
-                // Let's stick to the URL method for now—use your sandal link!
-                const testUrl = "https://cdn.shopify.com/s/files/1/0647/8181/1786/files/IMG_E9427.jpg?v=1761040111";
+                const base64Data = canvas.toDataURL('image/jpeg', 0.9);
 
-                const vecRes = await fetch(RAILWAY_URL, {
+                // We call the PROXY instead of direct Railway
+                const vecRes = await fetch(PROXY_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image_url: testUrl }) 
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${SUPABASE_KEY}` 
+                    },
+                    body: JSON.stringify({ image_base64: base64Data }) 
                 });
 
-                if (!vecRes.ok) throw new Error("Railway Vectorizer Failed");
+                if (!vecRes.ok) {
+                    const errorMsg = await vecRes.text();
+                    throw new Error(`Proxy Error: ${errorMsg}`);
+                }
+
                 const { embedding } = await vecRes.json();
+                console.log("Vector Received from Proxy:", embedding);
 
-                status.innerText = "Step 2: Vector Math in Supabase...";
-                const { data, error } = await supabaseClient.rpc('match_products_v1', {
-                    query_embedding: embedding,
-                    match_threshold: 0.5,
-                    match_count: 5
-                });
+                status.innerText = "🔎 DB: Matching via match_images_v1...";
+               // ALIGNED to match the new match_image_products_v1 function
+const { data: products, error } = await supabaseClient.rpc('match_image_products_v1', {
+    query_embedding: embedding,       // Must match SQL parameter name
+    match_threshold: 0.5,             // Matches SQL parameter name
+    match_count: 5,                   // Matches SQL parameter name
+    filter_business_id: businessId  // Added this to match the new SQL security filter
+});
 
-                if (error) throw error;
+if (error) {
+    console.error("RPC Error Details:", error);
+    throw new Error(`Database Error: ${error.message}`);
+}
 
+                // Render Results
                 grid.innerHTML = '';
-                document.getElementById('matchCount').innerText = `${data.length} FOUND`;
+                document.getElementById('matchCount').innerText = products ? products.length : 0;
 
-                data.forEach((item, i) => {
+                if (!products || products.length === 0) {
+                    grid.innerHTML = `
+                        <div class="text-gray-500 text-center py-20 border-2 border-dashed border-[#2b2f3a] rounded-2xl">
+                            No products matched this image.<br>Try adjusting the 0.5 threshold.
+                        </div>`;
+                    return;
+                }
+
+                products.forEach((item, i) => {
                     const sim = (1 - item.cosine_distance) * 100;
                     const isTop = i === 0;
+                    
+                    // Safe handling for the images array
+                    const displayImage = (Array.isArray(item.images) && item.images.length > 0) 
+                        ? item.images[0] 
+                        : 'https://via.placeholder.com/150';
+                    
+                    // Handle product link generation 
+                    const productLink = item.handle 
+                        ? `https://kisasacraft.co.ke/products/${item.handle}` 
+                        : `https://kisasacraft.co.ke/products/${item.id}`;
+
                     grid.innerHTML += `
-                        <div class="result-card p-4 rounded-xl flex gap-4 items-center ${isTop ? 'match-glow' : ''}">
-                            <img src="${item.images[0]}" class="w-20 h-20 object-cover rounded-lg">
-                            <div class="flex-1">
-                                <div class="font-bold text-sm">${item.title}</div>
-                                <div class="text-xs text-green-400 mt-1">${sim.toFixed(1)}% Match Confidence</div>
-                                <div class="text-[10px] text-gray-500 mt-1">ID: ${item.id}</div>
+                        <div class="result-card p-4 rounded-xl flex gap-4 items-center animate-fade-in ${isTop ? 'match-glow border-purple-500/50' : ''}">
+                            <div class="relative">
+                                <img src="${displayImage}" class="w-20 h-20 object-cover rounded-lg bg-black border border-[#2b2f3a]">
+                                ${isTop ? '<span class="absolute -top-2 -left-2 bg-purple-600 text-[8px] font-bold px-2 py-1 rounded-full shadow-lg">BEST</span>' : ''}
                             </div>
-                            <a href="https://kisasacraft.co.ke/products/${item.handle}" target="_blank" class="bg-purple-600/20 hover:bg-purple-600 text-purple-400 hover:text-white p-2 rounded-lg text-xs transition-all">View</a>
+                            <div class="flex-1 min-w-0">
+                                <div class="font-bold text-sm truncate text-white">${item.title}</div>
+                                <div class="text-xs text-green-400 mt-1 font-mono">${sim.toFixed(1)}% Match</div>
+                                <div class="text-[10px] text-gray-500 mt-1">Dist: ${item.cosine_distance.toFixed(4)}</div>
+                            </div>
+                            <a href="${productLink}" target="_blank" class="bg-purple-600/20 hover:bg-purple-600 text-purple-400 hover:text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+                                VIEW
+                            </a>
                         </div>
                     `;
                 });
-                status.innerText = "Search Complete.";
+
+                status.innerText = "✅ Analysis Complete.";
 
             } catch (err) {
-                console.error(err);
-                status.innerText = "Error: " + err.message;
+                console.error("Lab Error:", err);
+                status.innerText = "❌ Error: " + err.message;
             }
         };
     </script>
