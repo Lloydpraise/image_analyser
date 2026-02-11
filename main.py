@@ -20,16 +20,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load Model
-print("Loading CLIP Model (CPU Mode)...")
-model = SentenceTransformer('clip-ViT-B-32', device='cpu')
+# Load Model - Set to CPU explicitly to save memory
+print("Loading CLIP Model (CPU Optimized)...")
+try:
+    model = SentenceTransformer('clip-ViT-B-32', device='cpu')
+    model.eval() # Set to evaluation mode
+except Exception as e:
+    print(f"FAILED TO LOAD MODEL: {e}")
 
 class ImageRequest(BaseModel):
     image_url: str = None
     image_base64: str = None
 
 def smart_center_crop(img):
-    # CRITICAL: Always convert to RGB to drop alpha/transparency channels
     img = img.convert("RGB")
     width, height = img.size
     crop_percent = 0.70
@@ -37,7 +40,6 @@ def smart_center_crop(img):
     top = (height - height * crop_percent) / 2
     right = (width + width * crop_percent) / 2
     bottom = (height + height * crop_percent) / 2
-    # Standard resize to CLIP expected dimensions
     return img.crop((left, top, right, bottom)).resize((224, 224))
 
 @app.post("/vectorize")
@@ -58,14 +60,11 @@ async def vectorize_image(request: ImageRequest):
         if not img:
             raise HTTPException(status_code=400, detail="No image provided")
 
-        # Process the image
         processed_img = smart_center_crop(img)
 
-        # 🔧 THE BATCHING FIX:
-        # We pass a LIST containing the image. SentenceTransformers will return 
-        # a list of embeddings. We take the first one [0].
+        # Use torch.no_grad() to minimize RAM usage during inference
         with torch.no_grad():
-            embeddings = model.encode([processed_img], convert_to_tensor=True)
+            embeddings = model.encode([processed_img])
             embedding = embeddings[0].tolist()
         
         return {"embedding": embedding}
