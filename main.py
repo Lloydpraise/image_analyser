@@ -7,18 +7,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import uvicorn
+import os
 
 app = FastAPI()
 
-# --- NEW: FIX CORS ---
+# --- 1. STRICT CORS CONFIG ---
+# This must be defined before any routes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows your HTML Lab and any other source
-    allow_methods=["*"],
+    allow_origins=["*"],  # Allows all origins (essential for local testing)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows POST, OPTIONS, etc.
     allow_headers=["*"],
 )
 
 # Load Model
+print("Loading Model...")
 model = SentenceTransformer('clip-ViT-B-32')
 
 class ImageRequest(BaseModel):
@@ -38,16 +42,15 @@ def smart_center_crop(img):
 async def vectorize_image(request: ImageRequest):
     try:
         img = None
-        
-        # Logic to handle both sources
         if request.image_base64:
-            # Handle Base64 (Data URI or raw string)
-            header, encoded = request.image_base64.split(",", 1) if "," in request.image_base64 else (None, request.image_base64)
+            # Check if it has the data:image/jpeg;base64, prefix
+            encoded = request.image_base64
+            if "," in encoded:
+                encoded = encoded.split(",")[1]
             img_data = base64.b64decode(encoded)
             img = Image.open(BytesIO(img_data)).convert("RGB")
         
         elif request.image_url:
-            # Handle URL
             response = requests.get(request.image_url, timeout=10)
             img = Image.open(BytesIO(response.content)).convert("RGB")
         
@@ -63,5 +66,7 @@ async def vectorize_image(request: ImageRequest):
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# For local testing vs Railway
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
