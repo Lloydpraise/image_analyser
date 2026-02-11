@@ -69,9 +69,9 @@ async def vectorize_image(request: ImageRequest):
 
         # Use torch.no_grad() to minimize RAM usage during inference
         with torch.no_grad():
-            # Encode with explicit padding enabled to prevent batching issues
-            embeddings = model.encode([processed_img], convert_to_tensor=False)
-            embedding = embeddings[0].tolist() if isinstance(embeddings[0], (list, tuple)) else embeddings[0].cpu().numpy().tolist()
+            # Encode with batch_size to handle padding properly
+            embeddings = model.encode([processed_img], batch_size=1, convert_to_numpy=True)
+            embedding = embeddings[0].tolist()
         
         return {"embedding": embedding}
         
