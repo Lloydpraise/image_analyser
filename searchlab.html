@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>VVStudios - AI Search Lab</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { background: #0f1115; color: white; font-family: 'Inter', sans-serif; }
+        .result-card { background: #1a1d23; border: 1px solid #2b2f3a; }
+        .match-glow { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.2); }
+    </style>
+</head>
+<body class="p-8 max-w-6xl mx-auto">
+    <div class="mb-10 text-center">
+        <h1 class="text-3xl font-bold text-purple-400">AI Search Lab v1.0</h1>
+        <p class="text-gray-400">Testing Railway Vector Engine & Supabase Matching</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        <div class="space-y-6">
+            <div class="p-6 rounded-2xl bg-[#1a1d23] border border-[#2b2f3a]">
+                <h3 class="text-sm font-bold uppercase text-gray-500 mb-4">Step 1: Upload Image</h3>
+                <input type="file" id="imageInput" accept="image/*" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer">
+                
+                <div class="mt-6 grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-[10px] text-gray-500 mb-2 uppercase">Original Preview</p>
+                        <img id="preview" class="hidden rounded-lg border border-[#2b2f3a] w-full aspect-square object-cover">
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-purple-400 mb-2 uppercase font-bold">AI Focus (Center 70%)</p>
+                        <canvas id="cropPreview" class="w-full aspect-square rounded-lg border-2 border-purple-500/50 bg-black"></canvas>
+                    </div>
+                </div>
+
+                <button id="searchBtn" class="w-full mt-6 py-4 bg-purple-600 hover:bg-purple-500 rounded-xl font-bold transition-all shadow-lg shadow-purple-900/40">
+                    Analyze & Search Catalog
+                </button>
+            </div>
+
+            <div id="status" class="p-4 rounded-xl bg-purple-900/10 border border-purple-500/20 text-center text-sm text-purple-400 font-mono">
+                System Ready. Waiting for input...
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold flex items-center gap-3">
+                Live Matches <span id="matchCount" class="text-xs bg-[#2b2f3a] px-2 py-1 rounded text-purple-400">0 FOUND</span>
+            </h2>
+            <div id="resultsGrid" class="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const SUPABASE_URL = 'https://xgtnbxdxbbywvzrttixf.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhndG5ieGR4YmJ5d3Z6cnR0aXhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0Nzg5NTAsImV4cCI6MjA3MjA1NDk1MH0.YGk0vFyIJEiSpu5phzV04Mh4lrHBlfYLFtPP_afFtMQ';
+        const RAILWAY_URL = 'https://imageanalyser-production.up.railway.app/vectorize'; // YOUR LIVE LINK
+
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 1. Handle File Selection
+        document.getElementById('imageInput').onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const img = document.getElementById('preview');
+                    img.onload = () => {
+                        img.classList.remove('hidden');
+                        applySmartCrop(img);
+                    }
+                    img.src = ev.target.result;
+                }
+                reader.readAsDataURL(file);
+            }
+        };
+
+        // 2. The Smart Crop Logic (Matching our Python logic)
+        function applySmartCrop(imgElement) {
+            const canvas = document.getElementById('cropPreview');
+            const ctx = canvas.getContext('2d');
+            const cropPercent = 0.70; 
+            const sourceW = imgElement.naturalWidth;
+            const sourceH = imgElement.naturalHeight;
+            const cropW = sourceW * cropPercent;
+            const cropH = sourceH * cropPercent;
+            const startX = (sourceW - cropW) / 2;
+            const startY = (sourceH - cropH) / 2;
+
+            canvas.width = 224;
+            canvas.height = 224;
+            ctx.drawImage(imgElement, startX, startY, cropW, cropH, 0, 0, 224, 224);
+        }
+
+        // 3. The Search Loop
+        document.getElementById('searchBtn').onclick = async () => {
+            const status = document.getElementById('status');
+            const grid = document.getElementById('resultsGrid');
+            const canvas = document.getElementById('cropPreview');
+            
+            try {
+                status.innerText = "Step 1: Uploading to Railway AI...";
+                
+                // Convert canvas to Blob for Railway
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+                
+                // We need a URL to send to Railway. Since we don't want to fill up your DB, 
+                // we'll just send the base64 or a temporary upload if needed.
+                // FOR TESTING: Let's send the base64 string to Railway (we may need to update main.py for this)
+                const base64 = canvas.toDataURL('image/jpeg');
+                
+                // NOTE: Railway current main.py expects a URL. For this Lab, let's use a Public Sample 
+                // OR update the Python to accept base64. 
+                // Let's stick to the URL method for now—use your sandal link!
+                const testUrl = "https://cdn.shopify.com/s/files/1/0647/8181/1786/files/IMG_E9427.jpg?v=1761040111";
+
+                const vecRes = await fetch(RAILWAY_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image_url: testUrl }) 
+                });
+
+                if (!vecRes.ok) throw new Error("Railway Vectorizer Failed");
+                const { embedding } = await vecRes.json();
+
+                status.innerText = "Step 2: Vector Math in Supabase...";
+                const { data, error } = await supabaseClient.rpc('match_products_v1', {
+                    query_embedding: embedding,
+                    match_threshold: 0.5,
+                    match_count: 5
+                });
+
+                if (error) throw error;
+
+                grid.innerHTML = '';
+                document.getElementById('matchCount').innerText = `${data.length} FOUND`;
+
+                data.forEach((item, i) => {
+                    const sim = (1 - item.cosine_distance) * 100;
+                    const isTop = i === 0;
+                    grid.innerHTML += `
+                        <div class="result-card p-4 rounded-xl flex gap-4 items-center ${isTop ? 'match-glow' : ''}">
+                            <img src="${item.images[0]}" class="w-20 h-20 object-cover rounded-lg">
+                            <div class="flex-1">
+                                <div class="font-bold text-sm">${item.title}</div>
+                                <div class="text-xs text-green-400 mt-1">${sim.toFixed(1)}% Match Confidence</div>
+                                <div class="text-[10px] text-gray-500 mt-1">ID: ${item.id}</div>
+                            </div>
+                            <a href="https://kisasacraft.co.ke/products/${item.handle}" target="_blank" class="bg-purple-600/20 hover:bg-purple-600 text-purple-400 hover:text-white p-2 rounded-lg text-xs transition-all">View</a>
+                        </div>
+                    `;
+                });
+                status.innerText = "Search Complete.";
+
+            } catch (err) {
+                console.error(err);
+                status.innerText = "Error: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
